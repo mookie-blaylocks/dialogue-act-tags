@@ -60,13 +60,14 @@ def processFile(f):
     file_object = open(f, "r")
     tag_dict = getDialogueActTags(DIALOGUE_ACT_FILE)
     prev_tag = None
+    uttnum = 0
     for line in file_object.readlines():
         if " utt" in line:
             try:
                 metadata, words = line.split(':')
-                dialogue_act, speaker_uttnum, pair_part = metadata.split()
-                speaker, uttnum_str = speaker_uttnum.split('.')
-                uttnum = int(uttnum_str)
+                dialogue_act, speaker_turnnum, pair_part = metadata.split()
+                speaker, turnnum_str = speaker_turnnum.split('.')
+                turnnum = int(turnnum_str)
                 swbd_dialogue_act = update_tag(dialogue_act, tag_dict, prev_tag)
                 prev_tag = swbd_dialogue_act
                 output[uttnum] = {}
@@ -74,6 +75,7 @@ def processFile(f):
                 output[uttnum]["speaker"] = speaker
                 output[uttnum]["pair_part"] = pair_part
                 output[uttnum]["words"] = words
+                uttnum += 1
             except ValueError:
                 pass
     return output
@@ -181,6 +183,7 @@ def addLevels(n, tags=[]):
 def makeOneGramModel(convos):
     # model[i-n][i-n+1]...[i] = P(i)
     errors = 0
+    total = 0
     model = addLevels(1)
     
     # Recall the form convo[uttnum][speaker,dialogue_act,pair_part,words]
@@ -193,6 +196,7 @@ def makeOneGramModel(convos):
                 try:
                     b = convo[utt-1]["dialogue_act"]
                     model[b][a] += 1
+                    total += 1
                 except KeyError:
                     errors += 1
 
@@ -213,6 +217,8 @@ def makeOneGramModel(convos):
                 max_occurrences = model[lessOne][tag]
         predictions[lessOne] = prediction
 
+    print("trained models on {0} utterances".format(total))
+        
     return predictions
 
 
@@ -334,22 +340,6 @@ def makeForwardBiModel(convos):
                         max_occurrences = model[uptake][lessTwo][lessOne][tag]
                 predictions[uptake][lessTwo][lessOne] = prediction
 
-    # i = 0
-    # j = 0
-    # k = 0
-    # for uptake in tags:
-    #     for lessTwo in tags:
-    #         for lessOne in tags:
-    #             j += 1
-    #             if predictions[uptake][lessTwo][lessOne]:
-    #                 i += 1
-    #                 if predictions[uptake][lessTwo][lessOne] != "Statement-non-opinion":
-    #                     k += 1
-
-    # print("forward model finished with {0} errors".format(errors - len(convos)))
-    # print(i / j)
-    # print(k / i)
-    
     return predictions
 
 
@@ -396,32 +386,17 @@ def makeForwardTriModel(convos):
     return predictions
 
 
-def testModels():
+def testModel(convos, model, forward=False):
 
-    trainSet = getListOfFiles("./train")
-    convos = processConversations(trainSet)
-    oneGram = makeOneGramModel(convos)
-    twoGram = makeBiGramModel(convos)
-    threeGram = makeTriGramModel(convos)
-    uptakeBiGram = makeForwardBiModel(convos)
-    uptakeTriGram = makeForwardTriModel(convos)
-        
-    testSet = getListOfFiles("./test")
-    convos = processConversations(testSet)
-
+    correct = 0
     total = 0
-    uniGramCorrect = 0
-    biGramCorrect = 0
-    triGramCorrect = 0
-    forwardBiGramCorrect = 0
-    forwardTriGramCorrect = 0
     errors = 0
-
+    
     for convo in convos:
         for utt in convo.keys():
-            if utt < 4:
+            if utt < 4:  # Don't test opening utterances
                 pass
-            elif utt > (max(list(convo.keys())) - 1):
+            elif utt > (max(list(convo.keys())) - 1): # Don't test final utterance
                 pass
             else:
                 true_act = convo[utt]["dialogue_act"]
@@ -431,74 +406,71 @@ def testModels():
                     oneBack = convo[utt-1]["dialogue_act"]
                     twoBack = convo[utt-2]["dialogue_act"]
                     threeBack = convo[utt-3]["dialogue_act"]
-
-
-                    uniGramPrediction = oneGram[oneBack]
-                    if not uniGramPrediction:
-                        uniGramPrediction = "Statement-non-opinion"
-
-                    biGramPrediction = twoGram[twoBack][oneBack]
-                    if not biGramPrediction:
-                        biGramPrediction = oneGram[oneBack]
-                    if not biGramPrediction:
-                        biGramPrediction = "Statement-non-opinion"
-
-                    triGramPrediction = threeGram[threeBack][twoBack][oneBack]
-                    if not triGramPrediction:
-                        triGramPrediction = twoGram[twoBack][oneBack]
-                    if not triGramPrediction:
-                        triGramPrediction = oneGram[oneBack]
-                    if not triGramPrediction:
-                        triGramPrediction = "Statement-non-opinion"
-
-                    forwardBiGramPrediction = uptakeBiGram[uptake][twoBack][oneBack]
-                    if not forwardBiGramPrediction:
-                        forwardBiGramPrediction = threeGram[threeBack][twoBack][oneBack]
-                    if not forwardBiGramPrediction:
-                        forwardBiGramPrediction = twoGram[twoBack][oneBack]
-                    if not forwardBiGramPrediction:
-                        forwardBiGramPrediction = oneGram[oneBack]
-                    if not forwardBiGramPrediction:
-                        forwardBiGramPrediction = "Statement-non-opinion"
-
-                    forwardTriGramPrediction = uptakeTriGram[uptake][threeBack][twoBack][oneBack]
-                    if not forwardTriGramPrediction:
-                        forwardTriGramPrediction = uptakeBiGram[uptake][twoBack][oneBack]
-                    if not forwardTriGramPrediction:
-                        forwardTriGramPrediction = threeGram[threeBack][twoBack][oneBack]
-                    if not forwardTriGramPrediction:
-                        forwardTriGramPrediction = twoGram[twoBack][oneBack]
-                    if not forwardTriGramPrediction:
-                        forwardTriGramPrediction = oneGram[oneBack]
-                    if not forwardTriGramPrediction:
-                        forwardTriGramPrediction = "Statement-non-opinion"
-
-                    total += 1
-                    if uniGramPrediction == true_act:
-                        uniGramCorrect += 1
-                    if biGramPrediction == true_act:
-                        biGramCorrect += 1
-                    if triGramPrediction == true_act:
-                        triGramCorrect += 1
-                    if forwardBiGramPrediction == true_act:
-                        forwardBiGramCorrect += 1
-                    if forwardTriGramPrediction == true_act:
-                        forwardTriGramCorrect += 1
-                except KeyError: # Not sure what's going on here
+                except KeyError:
                     errors += 1
-                    
-    print("finished with {0} errors".format(errors))
-    print("\nuniGram: {0} of {1} correct".format(uniGramCorrect, total))
-    print(uniGramCorrect / total)
-    print("\nbiGram: {0} of {1} correct".format(biGramCorrect, total))
-    print(biGramCorrect / total)
-    print("\ntriGram: {0} of {1} correct".format(triGramCorrect, total))
-    print(triGramCorrect / total)
-    print("\nforwardBiGram: {0} of {1} correct".format(forwardBiGramCorrect, total))
-    print(forwardBiGramCorrect / total)
-    print("\nforwardTriGram: {0} of {1} correct".format(forwardTriGramCorrect, total))
-    print(forwardTriGramCorrect / total)
+
+                prediction = None
+                if forward:
+                    try:
+                        # triGramForward model
+                        prediction = model[uptake][threeBack][twoBack][oneBack]
+                    except:
+                        try:
+                            # biGramForward model
+                            prediction = model[uptake][twoBack][oneBack]
+                        except:
+                            pass
+
+                if not prediction:
+                    try:
+                        # triGram model
+                        prediction = model[threeBack][twoBack][oneBack]
+                    except:
+                        try:
+                            # biGram model
+                            prediction = model[twoBack][oneBack]
+                        except:
+                            try:
+                                # uniGram model
+                                prediction = model[oneBack]
+                            except:
+                                prediction = "Statement-non-opinion"
+
+                total += 1
+                if prediction == true_act:
+                    correct += 1
+
+    return (correct, total, errors)
 
 
-makeTrainAndTest()
+def testModels():
+
+    trainSet = getListOfFiles("./train")
+    trainConvos = processConversations(trainSet)
+    testSet = getListOfFiles("./test")
+    testConvos = processConversations(testSet)
+    
+    backModels = {}
+    backModels["uniGram"] = makeOneGramModel(trainConvos) # 0.380
+    backModels["biGram"] = makeBiGramModel(trainConvos)   # 0.394
+    backModels["triGram"] = makeTriGramModel(trainConvos) # 0.389
+
+    for model in backModels.keys():
+        correct, total, errors = testModel(testConvos, backModels[model], False)
+        print("\n{0}: {1} of {2} correct".format(model, correct, total))
+        print("{0} errors".format(errors))
+        print(correct / total)
+  
+    forwardModels = {}
+    forwardModels["forwardBiGram"] = makeForwardBiModel(trainConvos)   # 0.427
+    forwardModels["forwardTriGram"] = makeForwardTriModel(trainConvos) # 0.398
+
+    for model in forwardModels.keys():
+        correct, total, errors = testModel(testConvos, forwardModels[model], True)
+        print("\n{0}: {1} of {2} correct".format(model, correct, total))
+        print("{0} errors".format(errors))
+        print(correct / total)
+
+# This should only be uncommented once, otherwise training and testing bleed into each other
+#makeTrainAndTest  
 testModels()
