@@ -39,18 +39,20 @@ def getListOfFiles(dirName):
 def makeTrainAndTest():
     # Take the contents of the swbd folder and randomly assign
     # 90% to the training set and 10% to the test set
-    
+
     try:
         os.mkdir("./train")
         os.mkdir("./test")
-    except:
+        
+        for f in getListOfFiles("swbd"):
+            roll = random.randrange(0,10)
+            directory = "./train"
+            if roll < 1:
+                directory = "./test"
+            copy2(f, directory)
+    except FileExistsError:
         pass
-    for f in getListOfFiles("swbd"):
-        roll = random.randrange(0,10)
-        directory = "./train"
-        if roll < 1:
-            directory = "./test"
-        copy2(f, directory)
+    
 
 def processFile(f):
     # Take an input file (Conversation from the SWBD-DAMSL corpus)
@@ -471,6 +473,6 @@ def testModels():
         print("{0} errors".format(errors))
         print(correct / total)
 
-# This should only be uncommented once, otherwise training and testing bleed into each other
-#makeTrainAndTest  
+        
+makeTrainAndTest()
 testModels()
